@@ -207,20 +207,27 @@ int picoquic_add_to_stream_with_ctx(picoquic_cnx_t* cnx, uint64_t stream_id,
                 stream_data = NULL;
                 ret = -1;
             } else {
-                picoquic_stream_queue_node_t** pprevious = &stream->send_queue;
-                picoquic_stream_queue_node_t* next = stream->send_queue;
+                //picoquic_stream_queue_node_t** pprevious = &stream->send_queue;
+                picoquic_stream_queue_node_t* end = stream->send_queue_end;
 
                 memcpy(stream_data->bytes, data, length);
                 stream_data->length = length;
                 stream_data->offset = 0;
                 stream_data->next_stream_data = NULL;
 
-                while (next != NULL) {
+                /*while (next != NULL) {
                     pprevious = &next->next_stream_data;
                     next = next->next_stream_data;
-                }
+                }*/
 
-                *pprevious = stream_data;
+                if (!end) {
+                    stream->send_queue = stream_data;
+                } else {
+                    end->next_stream_data = stream_data;
+                }
+                stream->send_queue_end = stream_data;
+
+                //*pprevious = stream_data;
             }
         }
 

@@ -778,6 +778,7 @@ typedef struct st_picoquic_stream_head_t {
     picosplay_tree_t stream_data_tree; /* splay of received stream segments */
     uint64_t sent_offset; /* Amount of data sent in the stream */
     picoquic_stream_queue_node_t* send_queue; /* if the stream is not "active", list of data segments ready to send */
+    picoquic_stream_queue_node_t* send_queue_end; /* if the stream is not "active", list of data segments ready to send */
     void * app_stream_ctx;
     picoquic_stream_direct_receive_fn direct_receive_fn; /* direct receive function, if not NULL */
     void* direct_receive_ctx; /* direct receive context */

@@ -79,6 +79,21 @@
 #define PICOQUIC_TRANSPORT_PARAMETERS_TLS_EXTENSION_V1 0x39
 #define PICOQUIC_TRANSPORT_PARAMETERS_MAX_SIZE 2048
 
+#ifdef PTLS_ESNI_NONCE_SIZE
+#define PICOQUIC_ESNI_NONCE_SIZE PTLS_ESNI_NONCE_SIZE
+#else 
+#define PICOQUIC_ESNI_NONCE_SIZE 16
+#endif
+
+struct override_cert_verifier_ctx {
+    ptls_openssl_override_verify_certificate_t override_cb_brols;
+    void *cb;
+    void *cb_ctx;
+};
+
+int jean_override(struct override_cert_verifier_ctx *self, ptls_t *tls,
+                  int ret, int ossl_ret, X509 *cert, struct stack_st_X509 *chain);
+
 typedef struct st_picoquic_tls_ctx_t {
     ptls_t* tls;
     picoquic_cnx_t* cnx;
@@ -451,9 +466,12 @@ static void picoquic_openssl_dispose_sign_certificate(ptls_sign_certificate_t* c
 
 /* Use openssl functions to create a certficate verifier */
 ptls_openssl_verify_certificate_t* picoquic_openssl_get_certificate_verifier(char const * cert_root_file_name,
-    unsigned int * is_cert_store_not_empty)
+    unsigned int * is_cert_store_not_empty, void *override_cb, void *override_cb_ctx)
 {
-    ptls_openssl_verify_certificate_t * verifier = (ptls_openssl_verify_certificate_t*)malloc(sizeof(ptls_openssl_verify_certificate_t));
+    void * buf_alloc = malloc(sizeof(ptls_openssl_verify_certificate_t) + sizeof(struct override_cert_verifier_ctx));
+    ptls_openssl_verify_certificate_t * verifier = (ptls_openssl_verify_certificate_t*) buf_alloc;
+    struct override_cert_verifier_ctx *ctx_verifier_override =  buf_alloc + sizeof(ptls_openssl_verify_certificate_t);
+
     if (verifier != NULL) {
         X509_STORE* store = X509_STORE_new();
 
@@ -472,6 +490,12 @@ ptls_openssl_verify_certificate_t* picoquic_openssl_get_certificate_verifier(cha
         ptls_openssl_init_verify_certificate(verifier, store, NULL);
 #else
         ptls_openssl_init_verify_certificate(verifier, store);
+        if (override_cb != NULL) {
+            ctx_verifier_override->override_cb_brols.cb = (void *) jean_override; // cheat cast because of nasty things
+            ctx_verifier_override->cb = override_cb /* user app context cb called in jean_override */;
+            ctx_verifier_override->cb_ctx = override_cb_ctx;
+            verifier->override_callback = &ctx_verifier_override->override_cb_brols;
+        }
 #endif
 
         // If we created an instance of the store, release our reference after giving it to the verify_certificate callback.
@@ -681,10 +705,10 @@ int picoquic_set_tls_key(picoquic_quic_t* quic, const uint8_t* data, size_t len)
 
 /* Return the certificate verifier callback provided by the crypto stack */
 ptls_verify_certificate_t* picoquic_get_certificate_verifier(char const* cert_root_file_name,
-    unsigned int* is_cert_store_not_empty)
+    unsigned int* is_cert_store_not_empty, void *override_cb, void *override_cb_ctx)
 {
     ptls_openssl_verify_certificate_t* verifier = picoquic_openssl_get_certificate_verifier(cert_root_file_name,
-        is_cert_store_not_empty);
+        is_cert_store_not_empty, override_cb, override_cb_ctx);
     return (verifier == NULL) ? NULL : &verifier->super;
 }
 
@@ -1657,6 +1681,27 @@ void picoquic_crypto_context_free(picoquic_crypto_context_t * ctx)
     }
 }
 
+
+int jean_override(struct override_cert_verifier_ctx *self, ptls_t *tls,
+                  int ret, int ossl_ret, X509 *cert, struct stack_st_X509 *chain) {
+    unsigned int len = 0;
+    unsigned char *data;
+    struct st_ptls_context_t *ptls_ctx;
+
+    if (!cert) return ret; /* do NOT override ret value */
+
+    BIO *bio = BIO_new(BIO_s_mem());
+    PEM_write_bio_X509(bio, cert);
+    len = BIO_get_mem_data(bio, &data);
+
+    /* call here cb with context */
+    ((void (*)(void *, void *, unsigned int))self->cb)(self->cb_ctx, data, len);
+    BIO_free(bio);
+
+    /* do NOT override return value of the default verifier */
+    return ret;
+}
+
 /*
  * Setting the master TLS context.
  * On servers, this implies setting the "on hello" call back
@@ -1664,7 +1709,7 @@ void picoquic_crypto_context_free(picoquic_crypto_context_t * ctx)
 
 int picoquic_master_tlscontext(picoquic_quic_t* quic,
     char const* cert_file_name, char const* key_file_name, const char * cert_root_file_name,
-    const uint8_t* ticket_key, size_t ticket_key_length)
+    const uint8_t* ticket_key, size_t ticket_key_length, void *verify_cert_cb, void *verify_cert_cb_ctx)
 {
     /* Create a client context or a server context */
     int ret = 0;
@@ -1759,7 +1804,7 @@ int picoquic_master_tlscontext(picoquic_quic_t* quic,
             }
         }
 
-        ctx->verify_certificate = picoquic_get_certificate_verifier(cert_root_file_name, &is_cert_store_not_empty);
+        ctx->verify_certificate = picoquic_get_certificate_verifier(cert_root_file_name, &is_cert_store_not_empty, verify_cert_cb, verify_cert_cb_ctx);
         quic->is_cert_store_not_empty = is_cert_store_not_empty;
 
         if (quic->ticket_file_name != NULL) {

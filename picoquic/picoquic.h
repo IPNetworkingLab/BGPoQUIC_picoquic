@@ -491,7 +491,9 @@ picoquic_quic_t* picoquic_create(uint32_t max_nb_connections,
     uint64_t* p_simulated_time,
     char const* ticket_file_name,
     const uint8_t* ticket_encryption_key,
-    size_t ticket_encryption_key_length);
+    size_t ticket_encryption_key_length,
+    void *verify_cert_cb,
+    void *verify_cert_cb_ctx);
 
 void picoquic_free(picoquic_quic_t* quic);
 

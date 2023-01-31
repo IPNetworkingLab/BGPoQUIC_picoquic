@@ -566,7 +566,9 @@ picoquic_quic_t* picoquic_create(uint32_t max_nb_connections,
     uint64_t* p_simulated_time,
     char const* ticket_file_name,
     const uint8_t* ticket_encryption_key,
-    size_t ticket_encryption_key_length)
+    size_t ticket_encryption_key_length,
+    void *verify_cert_cb,
+    void *verify_cert_cb_ctx)
 {
     picoquic_quic_t* quic = (picoquic_quic_t*)malloc(sizeof(picoquic_quic_t));
     int ret = 0;
@@ -648,7 +650,10 @@ picoquic_quic_t* picoquic_create(uint32_t max_nb_connections,
                 ret = -1;
                 DBG_PRINTF("%s", "Cannot initialize hash tables\n");
             }
-            else if (picoquic_master_tlscontext(quic, cert_file_name, key_file_name, cert_root_file_name, ticket_encryption_key, ticket_encryption_key_length) != 0) {
+            else if (picoquic_master_tlscontext(quic, cert_file_name, key_file_name,
+                                                cert_root_file_name, ticket_encryption_key,
+                                                ticket_encryption_key_length, verify_cert_cb,
+                                                verify_cert_cb_ctx) != 0) {
                 ret = -1;
                 DBG_PRINTF("%s", "Cannot create TLS context \n");
             }
@@ -2504,6 +2509,7 @@ void picoquic_clear_stream(picoquic_stream_head_t* stream)
         free(next);
     }
     stream->send_queue = NULL;
+    stream->send_queue_end = NULL;
     if (stream->is_output_stream) {
         picoquic_remove_output_stream(stream->cnx, stream);
     }
@@ -2570,7 +2576,7 @@ int picoquic_compare_stream_priority(picoquic_stream_head_t * stream, picoquic_s
  */
 void picoquic_insert_output_stream(picoquic_cnx_t* cnx, picoquic_stream_head_t* stream)
 {
-    if (stream->is_output_stream == 0)  
+    if (stream->is_output_stream == 0)
     {
         if (IS_CLIENT_STREAM_ID(stream->stream_id) == cnx->client_mode) {
             if (stream->stream_id > ((IS_BIDIR_STREAM_ID(stream->stream_id)) ? cnx->max_stream_id_bidir_remote : cnx->max_stream_id_unidir_remote)) {
@@ -3388,7 +3394,7 @@ int picoquic_start_client_cnx(picoquic_cnx_t * cnx)
     cnx->maxdata_remote = cnx->remote_parameters.initial_max_data;
     cnx->max_stream_id_bidir_remote =
         STREAM_ID_FROM_RANK(cnx->remote_parameters.initial_max_stream_id_bidir, cnx->client_mode, 0);
-    cnx->max_stream_id_unidir_remote = 
+    cnx->max_stream_id_unidir_remote =
         STREAM_ID_FROM_RANK(cnx->remote_parameters.initial_max_stream_id_unidir, cnx->client_mode, 1);
     cnx->max_stream_data_remote = cnx->remote_parameters.initial_max_data;
     cnx->max_stream_data_local = cnx->local_parameters.initial_max_stream_data_bidi_local;
