@@ -684,6 +684,7 @@ typedef struct st_picoquic_quic_t {
 
     struct st_ptls_verify_certificate_t * verify_certificate_callback;
     picoquic_free_verify_certificate_ctx free_verify_certificate_callback_fn;
+    void *verify_override_ctx;
 
     picoquic_tp_t * default_tp;
 

@@ -2894,7 +2894,7 @@ int picoquic_prepare_packet_server_init(picoquic_cnx_t* cnx, picoquic_path_t * p
         SET_LAST_WAKE(cnx->quic, PICOQUIC_SENDER);
     }
 
-    /* The only purpose of the test below is to appease the static analyzer, so it
+    /* The only purpose of the thanest below is to appease the static analyzer, so it
      * wont complain of possible NULL deref. On windows we could use "__assume(path_x != NULL)"
      * but the documentation does not say anything about that for GCC and CLANG */
     if (path_x == NULL) {

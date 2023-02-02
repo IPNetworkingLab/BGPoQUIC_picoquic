@@ -747,7 +747,7 @@ picoquic_quic_t* picoquic_create_and_configure(picoquic_quic_config_t* config,
         p_simulated_time,
         config->ticket_file_name,
         config->ticket_encryption_key,
-        config->ticket_encryption_key_length, NULL, NULL);
+        config->ticket_encryption_key_length);
 
     if (quic != NULL) {
         int ret = 0;

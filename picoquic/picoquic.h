@@ -238,7 +238,8 @@ typedef enum {
     picoquic_callback_prepare_datagram, /* Prepare the next datagram */
     picoquic_callback_datagram_acked, /* Ack for packet carrying datagram-frame received from peer */
     picoquic_callback_datagram_lost, /* Packet carrying datagram-frame probably lost */
-    picoquic_callback_datagram_spurious /* Packet carrying datagram-frame was not really lost */
+    picoquic_callback_datagram_spurious, /* Packet carrying datagram-frame was not really lost */
+    picoquic_callback_certificate_received, /* Remote ce */
 } picoquic_call_back_event_t;
 
 typedef struct st_picoquic_tp_prefered_address_t {
@@ -491,9 +492,7 @@ picoquic_quic_t* picoquic_create(uint32_t max_nb_connections,
     uint64_t* p_simulated_time,
     char const* ticket_file_name,
     const uint8_t* ticket_encryption_key,
-    size_t ticket_encryption_key_length,
-    void *verify_cert_cb,
-    void *verify_cert_cb_ctx);
+    size_t ticket_encryption_key_length);
 
 void picoquic_free(picoquic_quic_t* quic);
 

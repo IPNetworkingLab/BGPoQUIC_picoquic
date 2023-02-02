@@ -566,9 +566,7 @@ picoquic_quic_t* picoquic_create(uint32_t max_nb_connections,
     uint64_t* p_simulated_time,
     char const* ticket_file_name,
     const uint8_t* ticket_encryption_key,
-    size_t ticket_encryption_key_length,
-    void *verify_cert_cb,
-    void *verify_cert_cb_ctx)
+    size_t ticket_encryption_key_length)
 {
     picoquic_quic_t* quic = (picoquic_quic_t*)malloc(sizeof(picoquic_quic_t));
     int ret = 0;
@@ -652,8 +650,7 @@ picoquic_quic_t* picoquic_create(uint32_t max_nb_connections,
             }
             else if (picoquic_master_tlscontext(quic, cert_file_name, key_file_name,
                                                 cert_root_file_name, ticket_encryption_key,
-                                                ticket_encryption_key_length, verify_cert_cb,
-                                                verify_cert_cb_ctx) != 0) {
+                                                ticket_encryption_key_length) != 0) {
                 ret = -1;
                 DBG_PRINTF("%s", "Cannot create TLS context \n");
             }
