@@ -218,6 +218,7 @@ typedef struct st_picoquic_version_parameters_t {
     char* tls_prefix_label;
     char* tls_traffic_update_label;
     uint32_t packet_type_version;
+    uint32_t* upgrade_from;
 } picoquic_version_parameters_t;
 
 extern const picoquic_version_parameters_t picoquic_supported_versions[];
@@ -611,6 +612,7 @@ typedef struct st_picoquic_quic_t {
     picoquic_spinbit_version_enum default_spin_policy;
     picoquic_lossbit_version_enum default_lossbit_policy;
     uint32_t default_multipath_option;
+    uint64_t default_idle_timeout;
     uint64_t crypto_epoch_length_max; /* Default packet interval between key rotations */
     uint32_t max_simultaneous_logs;
     uint32_t current_number_of_open_logs;
@@ -989,7 +991,6 @@ typedef struct st_picoquic_path_t {
     unsigned int path_cid_rotated : 1;
     unsigned int path_is_preferred_path : 1;
     unsigned int is_nat_challenge : 1;
-    unsigned int got_long_packet : 1;
     unsigned int is_cc_data_updated : 1;
     unsigned int is_multipath_probe_needed : 1;
     unsigned int was_local_cnxid_retired : 1;
@@ -1057,6 +1058,7 @@ typedef struct st_picoquic_path_t {
     uint64_t max_sample_delivered; /* Delivered value at time of max sample */
     uint64_t max_bandwidth_estimate; /* In bytes per second */
 
+    uint64_t bytes_sent; /* Total amount of bytes sent on the path */
     uint64_t received; /* Total amount of bytes received from the path */
     uint64_t receive_rate_epoch; /* Time of last receive rate measurement */
     uint64_t received_prior; /* Total amount received at start of epoch */
@@ -1530,6 +1532,8 @@ size_t picoquic_decode_varint_length(uint8_t byte);
 
 /* Packet parsing */
 
+picoquic_packet_type_enum picoquic_parse_long_packet_type(uint8_t flags, int version_index);
+
 int picoquic_parse_packet_header(
     picoquic_quic_t* quic,
     const uint8_t* bytes,
@@ -1765,6 +1769,7 @@ picoquic_local_cnxid_t* picoquic_find_local_cnxid_by_number(picoquic_cnx_t* cnx,
 picoquic_remote_cnxid_t* picoquic_find_remote_cnxid_by_number(picoquic_cnx_t* cnx, uint64_t sequence);
 uint8_t* picoquic_format_path_challenge_frame(uint8_t* bytes, uint8_t* bytes_max, int* more_data, int* is_pure_ack, uint64_t challenge);
 uint8_t* picoquic_format_path_response_frame(uint8_t* bytes, uint8_t* bytes_max, int* more_data, int* is_pure_ack, uint64_t challenge);
+int picoquic_should_repeat_path_response_frame(picoquic_cnx_t* cnx, const uint8_t* bytes, size_t bytes_max);
 uint8_t* picoquic_format_new_connection_id_frame(picoquic_cnx_t* cnx, uint8_t* bytes, uint8_t* bytes_max, int* more_data, int* is_pure_ack, picoquic_local_cnxid_t* l_cid);
 uint8_t* picoquic_format_blocked_frames(picoquic_cnx_t* cnx, uint8_t* bytes, uint8_t* bytes_max, int* more_data, int* is_pure_ack);
 int picoquic_queue_retire_connection_id_frame(picoquic_cnx_t * cnx, uint64_t sequence);

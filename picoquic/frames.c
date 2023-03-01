@@ -1120,7 +1120,6 @@ picoquic_stream_head_t* picoquic_find_ready_stream(picoquic_cnx_t* cnx)
     picoquic_stream_head_t* first_stream = cnx->first_output_stream;
     picoquic_stream_head_t* stream = first_stream;
     picoquic_stream_head_t* found_stream = NULL;
-    picoquic_stream_head_t* previous_stream = NULL;
 
 
     /* Look for a ready stream */
@@ -1179,7 +1178,6 @@ picoquic_stream_head_t* picoquic_find_ready_stream(picoquic_cnx_t* cnx)
                     cnx->flow_blocked = 1;
                 }
             }
-            previous_stream = stream;
         }
         stream = next_stream;
     }
@@ -1238,12 +1236,12 @@ uint8_t * picoquic_format_stream_blocked_frame(picoquic_cnx_t* cnx, uint8_t* byt
 
     if (IS_BIDIR_STREAM_ID(stream->stream_id)) {
         f_type = picoquic_frame_type_streams_blocked_bidir;
-        stream_limit = STREAM_RANK_FROM_ID(stream->stream_id);
+        stream_limit = STREAM_RANK_FROM_ID(cnx->max_stream_id_bidir_remote);
         should_not_send = cnx->stream_blocked_bidir_sent;
     }
     else {
         f_type = picoquic_frame_type_streams_blocked_unidir;
-        stream_limit = STREAM_RANK_FROM_ID(stream->stream_id);
+        stream_limit = STREAM_RANK_FROM_ID(cnx->max_stream_id_unidir_remote);
         should_not_send = cnx->stream_blocked_unidir_sent;
     }
     if (!should_not_send) {
@@ -1304,7 +1302,7 @@ uint8_t * picoquic_format_blocked_frames(picoquic_cnx_t* cnx, uint8_t* bytes, ui
     picoquic_stream_head_t* hi_pri_stream = NULL;
 
     /* Check whether there is a high priority stream declared */
-    if (cnx->high_priority_stream_id != (uint64_t)((int64_t)-1)) {
+    if (cnx->high_priority_stream_id != UINT64_MAX) {
         hi_pri_stream = picoquic_find_stream(cnx, cnx->high_priority_stream_id);
     }
 
@@ -2955,6 +2953,17 @@ int picoquic_check_frame_needs_repeat(picoquic_cnx_t* cnx, const uint8_t* bytes,
             /* Path challenge repeat follows its own logic. */
             *no_need_to_repeat = 1;
             break;
+        case picoquic_frame_type_path_response:
+            /* On the client side, challenge responses generally ought to be repeated in order to maximise
+             * chances of handshake success. However, doing so on the server side may create a "blowback"
+             * in case of attacks, if the initial challenge was set from an unreachable address, or if the
+             * source address of the path challenge was forged.
+             * If the node has sent several path responses, only the last one ought to be repeated.
+             * If the path on which the response was sent is abandoned, there is no need to repeat
+             * this frame. If the path is validated, then the response should always be repeated.
+             */
+            *no_need_to_repeat = picoquic_should_repeat_path_response_frame(cnx, bytes, bytes_max);
+            break;
         case picoquic_frame_type_datagram:
         case picoquic_frame_type_datagram_l:
             /* Datagrams are never repeated. */
@@ -3790,7 +3799,7 @@ const uint8_t* picoquic_decode_application_close_frame(picoquic_cnx_t* cnx, cons
  * Max data frame
  */
 
-#define PICOQUIC_MAX_MAXDATA ((uint64_t)((int64_t)-1))
+#define PICOQUIC_MAX_MAXDATA UINT64_MAX
 #define PICOQUIC_MAX_MAXDATA_1K (PICOQUIC_MAX_MAXDATA >> 10)
 #define PICOQUIC_MAX_MAXDATA_1K_MASK (PICOQUIC_MAX_MAXDATA << 10)
 
@@ -4257,6 +4266,46 @@ const uint8_t* picoquic_decode_path_response_frame(picoquic_cnx_t* cnx, const ui
     return bytes;
 }
 
+int picoquic_should_repeat_path_response_frame(picoquic_cnx_t* cnx, const uint8_t* bytes,
+    size_t bytes_max)
+{
+    /* On the client side, challenge responses generally ought to be repeated in order to maximise
+    * chances of handshake success. However, doing so on the server side may create a "blowback"
+    * in case of attacks, if the initial challenge was set from an unreachable address, or if the
+    * source address of the path challenge was forged.
+    * If the node has sent several path responses, only the last one ought to be repeated.
+    * If the path on which the response was sent is abandoned, there is no need to repeat
+    * this frame. If the path is validated, then the response should always be repeated.
+    */
+    int should_repeat = 0;
+    uint64_t response;
+    if (picoquic_frames_uint64_decode(bytes + 1, bytes + bytes_max, &response) != NULL) {
+        /* malformed frames will not be repeated */
+        /* find the path on which the challenge was sent. */
+        int path_index = -1;
+
+        for (int i = 0; i < cnx->nb_paths; i++) {
+            if (cnx->path[i]->challenge_response == response) {
+                path_index = i;
+                break;
+            }
+        }
+
+        if (path_index >= 0 &&
+            (cnx->path[path_index]->challenge_verified ||
+                (cnx->client_mode && !cnx->path[path_index]->challenge_failed))) {
+            should_repeat = 1;
+        }
+        else {
+            should_repeat = 0;
+        }
+    }
+
+    return should_repeat;
+}
+
+/* Handling of blocked frames.
+ */
 
 const uint8_t* picoquic_decode_blocked_frame(picoquic_cnx_t* cnx, const uint8_t* bytes, const uint8_t* bytes_max)
 {
@@ -4283,9 +4332,18 @@ const uint8_t* picoquic_decode_stream_blocked_frame(picoquic_cnx_t* cnx, const u
 
 const uint8_t* picoquic_decode_streams_blocked_frame(picoquic_cnx_t* cnx, const uint8_t* bytes, const uint8_t* bytes_max, uint8_t frame_id)
 {
-    if ((bytes = picoquic_frames_varint_skip(bytes+1, bytes_max)) == NULL) {
+    uint64_t stream_limit = 0;
+    if ((bytes = picoquic_frames_varint_decode(bytes+1, bytes_max, &stream_limit)) == NULL) {
         picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_FRAME_FORMAT_ERROR, 
             frame_id);
+    }
+    else {
+        uint64_t max_stream_id = (frame_id == picoquic_frame_type_streams_blocked_unidir) ?
+            cnx->max_stream_id_unidir_local : cnx->max_stream_id_bidir_local;
+        uint64_t local_limit = STREAM_RANK_FROM_ID(max_stream_id);
+        if (stream_limit > local_limit) {
+            picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_STREAM_LIMIT_ERROR, frame_id);
+        }
     }
     return bytes;
 }
