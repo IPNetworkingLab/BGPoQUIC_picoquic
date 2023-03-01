@@ -1283,6 +1283,7 @@ void picoquic_dispose_verify_certificate_callback(picoquic_quic_t* quic) {
             }
         } else {
             picoquic_dispose_certificate_verifier(ctx->verify_certificate);
+	    quic->verify_override_ctx = NULL;
             free(ctx->verify_certificate);
         }
         ctx->verify_certificate = NULL;
@@ -2360,7 +2361,7 @@ int picoquic_initialize_tls_stream(picoquic_cnx_t* cnx, uint64_t current_time)
          * This allows detection of errors during processing. */
         picoquic_clear_crypto_errors();
         struct override_cert_verifier_ctx *verif_ctx =  cnx->quic->verify_override_ctx;
-        if (verif_ctx) {
+        if (verif_ctx && cnx->callback_fn) {
             verif_ctx->cb = cnx->callback_fn;
             verif_ctx->cb_ctx = cnx;
         }
